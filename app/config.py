@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     aws_secret_access_key: str | None = None
     sqs_queue_name: str
     sqs_dlq_name: str
+    sqs_max_receive_count: int = 3
+    sqs_visibility_timeout: int = 30
 
     # API
     api_key: str
