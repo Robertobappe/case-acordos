@@ -41,6 +41,12 @@ def configurar_logging(nivel: str = "INFO") -> None:
     raiz = logging.getLogger()
     raiz.handlers = [handler]
     raiz.setLevel(nivel)
+    # Bibliotecas de rede logam cada requisição em INFO; mantemos só avisos e erros.
+    for nome in ("httpx", "httpcore", "botocore", "urllib3"):
+        logging.getLogger(nome).setLevel(logging.WARNING)
+    # Bibliotecas de rede logam cada requisição em INFO; mantemos só avisos e erros.
+    for nome in ("httpx", "httpcore", "botocore", "urllib3"):
+        logging.getLogger(nome).setLevel(logging.WARNING)
 
 
 def get_logger(nome: str) -> logging.Logger:
