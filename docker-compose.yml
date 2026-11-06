@@ -1,3 +1,13 @@
+# Uma imagem, vários papéis. O .env fornece a configuração; os dois valores abaixo
+# são sobrescritos porque, dentro do Docker, "localhost" é o próprio container.
+x-app: &app
+  build: .
+  image: case-acordos:latest
+  env_file: .env
+  environment:
+    DB_HOST: postgres
+    AWS_ENDPOINT_URL: http://sqs:9324
+
 services:
   postgres:
     image: postgres:16
@@ -7,7 +17,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./sql:/docker-entrypoint-initdb.d
@@ -21,7 +31,53 @@ services:
     image: softwaremill/elasticmq-native
     container_name: acordos-sqs
     ports:
-      - "9324:9324"   # API compatível com SQS
+      - "127.0.0.1:9324:9324"
+
+  # Executa uma vez: cria a fila principal e a DLQ, tentando de novo até o SQS responder.
+  init:
+    <<: *app
+    container_name: acordos-init
+    command: ["sh", "-c", "until python -m scripts.criar_filas; do echo 'aguardando o sqs'; sleep 2; done"]
+    depends_on:
+      - sqs
+    restart: "no"
+
+  api:
+    <<: *app
+    container_name: acordos-api
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  consumer:
+    <<: *app
+    container_name: acordos-consumer
+    command: ["python", "-m", "app.consumer"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Sob demanda: docker compose run --rm producer
+  producer:
+    <<: *app
+    container_name: acordos-producer
+    command: ["python", "-m", "app.producer"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    profiles: ["carga"]
+    restart: "no"
 
 volumes:
   pgdata:
